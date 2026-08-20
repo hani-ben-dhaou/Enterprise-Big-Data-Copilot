@@ -1,0 +1,150 @@
+
+
+
+services:
+  # ---------------------------------------------------------------
+  # Ollama — local LLM server
+  # ---------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: copilot-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ---------------------------------------------------------------
+  # Qdrant — vector database for RAG
+  # ---------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: copilot-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Trino — SQL query engine
+  # ---------------------------------------------------------------
+  trino:
+    image: trinodb/trino:latest
+    container_name: copilot-trino
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./docker/trino:/etc/trino
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Open WebUI — chat interface
+  # ---------------------------------------------------------------
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: copilot-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://copilot-api:8000/v1
+      - OPENAI_API_KEY=not-needed
+      - HF_HUB_OFFLINE=true
+      - RAG_EMBEDDING_ENGINE=ollama
+      - RAG_EMBEDDING_MODEL=mxbai-embed-large
+    depends_on:
+      - ollama
+    volumes:
+      - webui_data:/app/backend/data
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Big Data Copilot API
+  # ---------------------------------------------------------------
+  copilot-api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: entreprise-bigdata-copilot:app
+    container_name: copilot-api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - TRINO_HOST=trino
+      - TRINO_PORT=8080
+      - TRINO_CATALOG=tpch
+      - TRINO_SCHEMA=tiny
+      # Metadata comes from live Trino information_schema.
+      # NOTE: inprocess transport (fastmcp 0.4.1 SSE crashes on POST /messages —
+      # see fastmcp/server.py run_sse_async). mcp-server keeps serving SSE for
+      # external MCP clients; the API dispatches to the same catalog tools locally.
+      - MCP_TRANSPORT=inprocess
+      - MCP_METADATA_SOURCE=trino
+      - MCP_SERVER_HOST=mcp-server
+      - MCP_SERVER_PORT=8001
+      - ENABLE_SQL_EXECUTION=true
+    depends_on:
+      - ollama
+      - qdrant
+      - trino
+      - mcp-server
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------
+  # Big Data Copilot MCP Server — metadata + query tools over MCP (SSE)
+  # ---------------------------------------------------------------
+  mcp-server:
+    # Reuses the image built for copilot-api — same code, same deps, only the
+    # runtime command differs. No separate build block (see copilot-api).
+    image: entreprise-bigdata-copilot:app
+    container_name: copilot-mcp
+    command: ["python", "-m", "app.mcp.server"]
+    ports:
+      - "8001:8001"
+    env_file: .env
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - TRINO_HOST=trino
+      - TRINO_PORT=8080
+      - TRINO_CATALOG=tpch
+      - TRINO_SCHEMA=tiny
+      - MCP_METADATA_SOURCE=trino
+      - MCP_SERVER_HOST=0.0.0.0
+      - MCP_SERVER_PORT=8001
+      - ENABLE_SQL_EXECUTION=true
+    depends_on:
+      - trino
+    healthcheck:
+      # FastMCP's SSE endpoint streams indefinitely, so probe TCP liveness only.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8001'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  ollama:
+     external: true
+  qdrant_data:
+  webui_data:

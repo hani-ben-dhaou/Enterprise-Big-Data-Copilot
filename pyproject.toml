@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+# FastMCP emits a benign pydantic warning because the MCP tool argument is
+# named `schema` (mirrors the standard Trino/database term).
+filterwarnings = [
+    "ignore:Field name \"schema\" in \".*shadows an attribute in parent \"ArgModelBase\":UserWarning",
+]
