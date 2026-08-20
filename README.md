@@ -170,7 +170,7 @@ Create a free account, grab an API key, and set:
 `LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY=<your key>`, and optionally
 `LANGCHAIN_PROJECT=copilot`. Tracing stays off while no key is configured.
 
-![LangSmith trace of a copilot pipeline run](archive/image.png)
+![LangSmith trace of a copilot pipeline run](image.png)
 
 ## Docker
 
