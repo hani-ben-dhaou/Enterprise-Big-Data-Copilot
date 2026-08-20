@@ -16,6 +16,7 @@ Enterprise Big Data Copilot lets users query Big Data platforms in plain English
 - Best-effort query execution and result retrieval from Trino
 - Model Context Protocol (MCP) server exposing metadata, query, and profiling tools
 - OpenAI-compatible API for Open WebUI
+- End-to-end pipeline tracing with LangSmith
 
 ## Architecture
 
@@ -42,6 +43,7 @@ flowchart LR
 | Ollama | Local LLM (`llama3.2`) and embeddings (`mxbai-embed-large`) |
 | LangChain + Qdrant | RAG document retrieval |
 | FastMCP | Model Context Protocol server (tools) |
+| LangSmith | Pipeline tracing and monitoring |
 | Trino | SQL query engine (TPCH demo catalog) |
 | Open WebUI | Chat UI (optional) |
 | Docker | Containerized infrastructure |
@@ -103,6 +105,9 @@ Key variables (defaults work for local dev):
 | `MCP_TRANSPORT` | `inprocess` (default, recommended on Windows) or `sse` |
 | `MCP_METADATA_SOURCE` | `inmemory` (demo catalog) or `trino` (live metadata) |
 | `ENABLE_SQL_EXECUTION` | Run validated SQL on Trino |
+| `LANGCHAIN_TRACING_V2` | Set `true` to enable LangSmith tracing |
+| `LANGCHAIN_API_KEY` | Your LangSmith API key (tracing stays off if empty) |
+| `LANGCHAIN_PROJECT` | LangSmith project name (default `copilot`) |
 
 ### Run
 
@@ -156,6 +161,16 @@ pytest
 ```
 
 The suite is hermetic and runs without a live stack (146 tests).
+
+## Tracing & Monitoring
+
+Every pipeline query (RAG retrieval, schema lookup, SQL generation, validation
+loops, execution) can be traced with **[LangSmith](https://smith.langchain.com)**.
+Create a free account, grab an API key, and set:
+`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY=<your key>`, and optionally
+`LANGCHAIN_PROJECT=copilot`. Tracing stays off while no key is configured.
+
+![LangSmith trace of a copilot pipeline run](archive/image.png)
 
 ## Docker
 
